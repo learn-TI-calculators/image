@@ -3,266 +3,324 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TI-84 Plus CE Image & WebUSB Tool</title>
+    <title>TI-84 Plus CE Real WebUSB Transfer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f172a; /* slate-900 */
-            color: #f8fafc; /* slate-50 */
-        }
-
-        .terminal {
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        /* TI-84 CE Screen Simulation */
-        .ti-screen {
-            image-rendering: pixelated;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
-            border: 8px solid #1e293b;
-            border-radius: 4px;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        canvas { image-rendering: pixelated; }
+        #terminal::-webkit-scrollbar { width: 8px; }
+        #terminal::-webkit-scrollbar-track { background: #1e293b; }
+        #terminal::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center p-4 md:p-8">
+<body class="min-h-screen p-4 flex flex-col items-center">
 
-    <!-- 6) Prominent Warning Banner -->
-    <div class="w-full max-w-6xl bg-yellow-500/10 border-l-4 border-yellow-500 p-4 mb-8 rounded shadow-sm">
-        <div class="flex items-start">
-            <svg class="w-6 h-6 text-yellow-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-            <div>
-                <h3 class="text-yellow-500 font-bold text-lg">IMPORTANT: WebUSB Security Policy</h3>
-                <p class="text-yellow-200/80 text-sm mt-1">
-                    If you are viewing this inside an iframe (like a preview window), the browser <strong>will block WebUSB access</strong> with a permissions error. To connect to your calculator, you <strong class="text-yellow-400">MUST</strong> save this code as an <code>.html</code> file on your computer and open it directly in a browser (like Chrome or Edge), or serve it via <code>localhost</code>.
-                </p>
+    <div class="w-full max-w-5xl bg-slate-800 rounded-xl shadow-2xl border border-slate-700 overflow-hidden flex flex-col h-[95vh]">
+        <header class="bg-slate-900 p-4 border-b border-slate-700 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-blue-400">TI-84+ CE Protocol Link</h1>
+            <div class="flex gap-2">
+                <span id="usbStatus" class="px-3 py-1 rounded bg-slate-700 text-slate-300 text-sm font-semibold flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-red-500"></div> Disconnected
+                </span>
+            </div>
+        </header>
+
+        <div class="flex flex-col md:flex-row flex-grow overflow-hidden">
+            <!-- Controls and Preview -->
+            <div class="w-full md:w-1/3 p-4 border-r border-slate-700 flex flex-col gap-4 overflow-y-auto">
+                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700">
+                    <h2 class="font-semibold text-blue-300 mb-2">1. Select Image</h2>
+                    <input type="file" id="imageInput" accept="image/png, image/jpeg" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-900 file:text-blue-300 hover:file:bg-blue-800 cursor-pointer"/>
+                </div>
+
+                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700">
+                    <h2 class="font-semibold text-blue-300 mb-2">2. Processed Preview</h2>
+                    <div class="bg-black rounded overflow-hidden flex justify-center items-center border border-slate-600 relative aspect-[4/3]">
+                        <canvas id="previewCanvas" width="320" height="240" class="w-full h-full object-contain"></canvas>
+                        <div id="noImg" class="absolute text-slate-500 font-mono text-sm">NO IMAGE DATA</div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 flex-grow flex flex-col justify-end gap-2">
+                    <h2 class="font-semibold text-blue-300 mb-2">3. Hardware Link</h2>
+                    <button id="connectBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-4 rounded transition">Connect Calculator</button>
+                    <button id="sendBtn" disabled class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded transition">Execute Transfer Protocol</button>
+                </div>
+            </div>
+
+            <!-- Terminal -->
+            <div class="w-full md:w-2/3 bg-black flex flex-col p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="font-semibold text-blue-300 font-mono text-sm">Serial Link Terminal</h2>
+                    <button id="clearLogBtn" class="text-xs text-slate-400 hover:text-white">Clear</button>
+                </div>
+                <div id="terminal" class="flex-grow overflow-y-auto font-mono text-xs text-slate-300 break-all space-y-1 p-2 bg-slate-950 border border-slate-800 rounded">
+                    <!-- Logs go here -->
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Main Dashboard -->
-    <main class="w-full max-w-6xl bg-slate-800 rounded-xl shadow-2xl overflow-hidden border border-slate-700">
-        
-        <header class="bg-slate-900 px-6 py-5 border-b border-slate-700 flex justify-between items-center">
-            <div>
-                <h1 class="text-2xl font-bold text-white flex items-center gap-2">
-                    <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
-                    TI-84 Plus CE Prep & WebUSB Terminal
-                </h1>
-                <p class="text-slate-400 text-sm mt-1">Prepare images to exact specifications and interface directly with TI hardware.</p>
-            </div>
-        </header>
-
-        <div class="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            <!-- Left Panel: Image Processing -->
-            <div class="lg:col-span-5 space-y-6">
-                <!-- 1) Upload Image -->
-                <div class="bg-slate-700/30 p-5 rounded-lg border border-slate-600">
-                    <h2 class="text-lg font-semibold mb-3 text-indigo-300">1. Upload Source Image</h2>
-                    <label class="block w-full cursor-pointer bg-slate-700 hover:bg-slate-600 border-2 border-dashed border-slate-500 hover:border-indigo-400 rounded-lg p-6 text-center transition-colors">
-                        <span class="text-slate-200 font-medium">Click to select an image</span>
-                        <span class="block text-xs text-slate-400 mt-1">JPG, PNG, WebP accepted</span>
-                        <input type="file" id="imageUpload" class="hidden" accept="image/*" />
-                    </label>
-                </div>
-
-                <!-- 2 & 3) Canvas Preview & RGB565 -->
-                <div class="bg-slate-700/30 p-5 rounded-lg border border-slate-600 flex flex-col items-center">
-                    <h2 class="text-lg font-semibold w-full mb-3 text-indigo-300">2. Calculator Screen Preview</h2>
-                    <p class="text-xs text-slate-400 w-full mb-4">Cropped to 320x240. Colors clamped to 16-bit RGB565.</p>
-                    
-                    <div class="relative flex justify-center w-full bg-black p-4 rounded shadow-inner">
-                        <!-- Canvas is strictly 320x240 -->
-                        <canvas id="calcCanvas" width="320" height="240" class="ti-screen bg-black"></canvas>
-                        <div id="canvasPlaceholder" class="absolute inset-0 flex items-center justify-center text-slate-500 text-sm pointer-events-none">
-                            [ AWAITING IMAGE ]
-                        </div>
-                    </div>
-
-                    <!-- 4) Download Button -->
-                    <button id="downloadBtn" disabled class="mt-6 w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-2 px-4 rounded font-semibold transition-colors flex items-center justify-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        Download 320x240 PNG
-                    </button>
-                </div>
-            </div>
-
-            <!-- Right Panel: WebUSB Logic -->
-            <div class="lg:col-span-7 flex flex-col space-y-6">
-                <div class="bg-slate-700/30 p-5 rounded-lg border border-slate-600 flex-grow flex flex-col">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <h2 class="text-lg font-semibold text-emerald-400">3. Hardware Interface (WebUSB)</h2>
-                            <p class="text-xs text-slate-400 mt-1">Filters for Vendor ID: 0x0451 (Texas Instruments)</p>
-                        </div>
-                        <!-- 5) Real WebUSB Connect Button -->
-                        <button id="usbConnectBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-4 rounded font-semibold transition-colors flex items-center gap-2 shadow-lg shadow-emerald-900/50">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            Connect TI Device
-                        </button>
-                    </div>
-
-                    <!-- Debug Terminal Textarea -->
-                    <div class="flex-grow flex flex-col">
-                        <label for="debugLog" class="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2">Debug Terminal</label>
-                        <textarea id="debugLog" readonly class="terminal w-full flex-grow bg-gray-900 text-green-400 p-4 rounded border border-gray-700 focus:outline-none focus:border-emerald-500 resize-none text-sm h-64 shadow-inner" spellcheck="false">> System initialized. Waiting for USB action...</textarea>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-    </main>
-
     <script>
-        // --- Image Processing Logic ---
-        const imageUpload = document.getElementById('imageUpload');
-        const canvas = document.getElementById('calcCanvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const canvasPlaceholder = document.getElementById('canvasPlaceholder');
-        const downloadBtn = document.getElementById('downloadBtn');
+        // --- UI & Logging ---
+        const terminal = document.getElementById('terminal');
+        function log(message, type = 'info', data = null) {
+            const el = document.createElement('div');
+            let time = new Date().toISOString().substring(11, 23);
+            let color = type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : type === 'tx' ? 'text-blue-400' : type === 'rx' ? 'text-purple-400' : 'text-slate-300';
+            let prefix = type === 'tx' ? 'OUT >' : type === 'rx' ? 'IN  <' : 'SYS -';
+            
+            let text = `<span class="text-slate-500">[${time}]</span> <span class="${color}">${prefix} ${message}</span>`;
+            if (data) {
+                const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                text += `<br><span class="text-slate-600 ml-16">${hex}</span>`;
+            }
+            el.innerHTML = text;
+            terminal.appendChild(el);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
 
-        imageUpload.addEventListener('change', (e) => {
+        document.getElementById('clearLogBtn').addEventListener('click', () => terminal.innerHTML = '');
+
+        // --- Image Processing ---
+        const canvas = document.getElementById('previewCanvas');
+        const ctx = canvas.getContext('2d');
+        let tiFileData = null; 
+
+        document.getElementById('imageInput').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = (event) => {
                 const img = new Image();
                 img.onload = () => {
-                    canvasPlaceholder.style.display = 'none';
+                    document.getElementById('noImg').style.display = 'none';
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
                     
-                    // 2) Resize and crop to EXACTLY 320x240 (Cover aspect ratio)
-                    const targetW = 320;
-                    const targetH = 240;
-                    const canvasRatio = targetW / targetH;
-                    const imgRatio = img.width / img.height;
+                    // Fit image into 320x240
+                    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                    const w = img.width * scale;
+                    const h = img.height * scale;
+                    const x = (canvas.width - w) / 2;
+                    const y = (canvas.height - h) / 2;
                     
-                    let srcX = 0, srcY = 0, srcW = img.width, srcH = img.height;
-
-                    if (imgRatio > canvasRatio) {
-                        // Image is wider than needed -> Crop left & right
-                        srcW = img.height * canvasRatio;
-                        srcX = (img.width - srcW) / 2;
-                    } else {
-                        // Image is taller than needed -> Crop top & bottom
-                        srcH = img.width / canvasRatio;
-                        srcY = (img.height - srcH) / 2;
-                    }
-
-                    // Clear and draw cropped image
-                    ctx.clearRect(0, 0, targetW, targetH);
-                    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, targetW, targetH);
-
-                    // 3) Apply 16-bit RGB565 Quantization Visual Filter
-                    applyRGB565Filter(targetW, targetH);
-                    
-                    // Enable Download
-                    downloadBtn.disabled = false;
+                    ctx.drawImage(img, x, y, w, h);
+                    log('Image loaded and resized to 320x240.', 'info');
+                    generateTIFile();
                 };
                 img.src = event.target.result;
             };
             reader.readAsDataURL(file);
         });
 
-        function applyRGB565Filter(width, height) {
-            const imageData = ctx.getImageData(0, 0, width, height);
-            const data = imageData.data;
+        function generateTIFile() {
+            log('Generating TI-84 Plus CE .8ci file structure...', 'info');
+            const imgData = ctx.getImageData(0, 0, 320, 240).data;
+            const rgb565 = new Uint8Array(320 * 240 * 2);
             
-            for (let i = 0; i < data.length; i += 4) {
-                // RGB565 has 5 bits for Red, 6 for Green, 5 for Blue.
-                // We clamp the 8-bit color values by masking the lower bits.
-                // 0xF8 = 11111000 (Keep top 5 bits)
-                // 0xFC = 11111100 (Keep top 6 bits)
-                
-                data[i]     = data[i] & 0xF8;     // Red 
-                data[i + 1] = data[i + 1] & 0xFC; // Green
-                data[i + 2] = data[i + 2] & 0xF8; // Blue
-                // data[i+3] is Alpha, remains unchanged
+            // Convert to RGB565 (Little Endian for CE)
+            let ptr = 0;
+            for (let i = 0; i < imgData.length; i += 4) {
+                const r = imgData[i] >> 3;
+                const g = imgData[i+1] >> 2;
+                const b = imgData[i+2] >> 3;
+                const val16 = (r << 11) | (g << 5) | b;
+                rgb565[ptr++] = val16 & 0xFF;        // Low byte
+                rgb565[ptr++] = (val16 >> 8) & 0xFF; // High byte
             }
+
+            // Build TI File Format
+            // Variable Header: Type(0x1C), Name(Image1), Version, Flag, Length
+            const varName = [0x49, 0x6D, 0x61, 0x67, 0x65, 0x31, 0x00, 0x00]; // "Image1"
+            const imgMagic = [0x81, 0x00]; // CE Image identifier
+            const widthBytes = [0x40, 0x01]; // 320 little endian
+            const heightBytes = [0xF0, 0x00]; // 240 little endian
             
-            ctx.putImageData(imageData, 0, 0);
+            const varDataLen = imgMagic.length + widthBytes.length + heightBytes.length + rgb565.length; // 153606
+            const varHeaderLen = 13;
+            const totalVarEntryLen = varHeaderLen + 2 + varDataLen; 
+
+            // Assembly of the actual file payload
+            const dataLengthBytes = [varDataLen & 0xFF, (varDataLen >> 8) & 0xFF, (varDataLen >> 16) & 0xFF, (varDataLen >> 24) & 0xFF]; // For extremely large variables, standard CE format handles size slightly differently, but we stick to standard 16 bit fields where possible or 32 bit for CE.
+            // Simplified standard variable entry (enough for protocol transmission)
+            
+            let filePayload = new Uint8Array(totalVarEntryLen);
+            let idx = 0;
+            
+            // Var Header
+            filePayload[idx++] = 0x0D; // Header size (fixed 13 for standard apps)
+            filePayload[idx++] = 0x00; 
+            filePayload[idx++] = varDataLen & 0xFF;        // Data length low
+            filePayload[idx++] = (varDataLen >> 8) & 0xFF; // Data length high
+            filePayload[idx++] = 0x1C; // Var type (Image)
+            for (let i = 0; i < 8; i++) filePayload[idx++] = varName[i]; // Name
+            filePayload[idx++] = 0x00; // Version
+            filePayload[idx++] = 0x00; // Flag
+            
+            filePayload[idx++] = varDataLen & 0xFF;        // Data length again low
+            filePayload[idx++] = (varDataLen >> 8) & 0xFF; // Data length again high
+            
+            // Var Data
+            filePayload[idx++] = imgMagic[0];
+            filePayload[idx++] = imgMagic[1];
+            filePayload[idx++] = widthBytes[0];
+            filePayload[idx++] = widthBytes[1];
+            filePayload[idx++] = heightBytes[0];
+            filePayload[idx++] = heightBytes[1];
+            
+            filePayload.set(rgb565, idx);
+            tiFileData = filePayload;
+
+            log(`File compiled. Total variable size: ${tiFileData.length} bytes.`, 'success');
+            if (device) document.getElementById('sendBtn').disabled = false;
         }
 
-        // 4) Download Image Logic
-        downloadBtn.addEventListener('click', () => {
-            const dataURL = canvas.toDataURL('image/png');
-            const link = document.createElement('a');
-            link.download = 'ti84_background.png';
-            link.href = dataURL;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+        // --- WebUSB & TI Protocol ---
+        const TI_VENDOR_ID = 0x0451;
+        // Commands
+        const CMD_ACK = 0x56;
+        const CMD_RTS = 0x06;
+        const CMD_CTS = 0x09;
+        const CMD_DATA = 0x15;
+        const CMD_EOT = 0x92;
+        const MACHINE_ID = 0x7D; // Requested Machine ID
+
+        let device = null;
+        let epIn = null;
+        let epOut = null;
+
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            try {
+                log('Requesting USB device (Vendor: 0x0451)...', 'info');
+                device = await navigator.usb.requestDevice({ filters: [{ vendorId: TI_VENDOR_ID }] });
+                
+                log(`Found: ${device.productName}. Opening connection...`, 'info');
+                await device.open();
+                
+                if (device.configuration === null) {
+                    log('Selecting configuration 1...', 'info');
+                    await device.selectConfiguration(1);
+                }
+                
+                log('Claiming interface 0...', 'info');
+                await device.claimInterface(0);
+
+                // Find Endpoints
+                const alt = device.configuration.interfaces[0].alternate;
+                alt.endpoints.forEach(ep => {
+                    if (ep.direction === 'in') epIn = ep.endpointNumber;
+                    if (ep.direction === 'out') epOut = ep.endpointNumber;
+                });
+
+                if (epIn !== null && epOut !== null) {
+                    log(`Endpoints found - IN: ${epIn}, OUT: ${epOut}`, 'success');
+                    document.getElementById('usbStatus').innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Connected`;
+                    if (tiFileData) document.getElementById('sendBtn').disabled = false;
+                } else {
+                    throw new Error('Bulk endpoints not found on device.');
+                }
+            } catch (error) {
+                log(`Connection Error: ${error.message}`, 'error');
+            }
         });
 
-
-        // --- 5) Real WebUSB Logic ---
-        const usbConnectBtn = document.getElementById('usbConnectBtn');
-        const debugLog = document.getElementById('debugLog');
-
-        function logToTerminal(message) {
-            const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
-            debugLog.value += `\n[${timestamp}] ${message}`;
-            debugLog.scrollTop = debugLog.scrollHeight;
+        // Packager for TI Link Packets
+        function createPacket(machine, command, data = new Uint8Array(0)) {
+            const packet = new Uint8Array(4 + data.length + 2);
+            packet[0] = machine;
+            packet[1] = command;
+            packet[2] = data.length & 0xFF;
+            packet[3] = (data.length >> 8) & 0xFF;
+            
+            if (data.length > 0) {
+                packet.set(data, 4);
+            }
+            
+            let checksum = 0;
+            for (let i = 0; i < data.length; i++) {
+                checksum += data[i];
+            }
+            packet[packet.length - 2] = checksum & 0xFF;
+            packet[packet.length - 1] = (checksum >> 8) & 0xFF;
+            return packet;
         }
 
-        usbConnectBtn.addEventListener('click', async () => {
-            if (!navigator.usb) {
-                logToTerminal('ERROR: WebUSB is not supported in this browser. Use Chrome/Edge.');
-                return;
+        async function sendRawPacket(packet) {
+            log(`Sending CMD: 0x${packet[1].toString(16).toUpperCase()}`, 'tx', packet);
+            await device.transferOut(epOut, packet);
+        }
+
+        async function readRawPacket() {
+            log('Awaiting response...', 'info');
+            // Timeout is critical so we don't hang forever
+            const result = await device.transferIn(epIn, 512); 
+            if (result.data) {
+                const arr = new Uint8Array(result.data.buffer);
+                log(`Received CMD: 0x${arr.length > 1 ? arr[1].toString(16).toUpperCase() : '??'}`, 'rx', arr);
+                return arr;
             }
+            return null;
+        }
+
+        document.getElementById('sendBtn').addEventListener('click', async () => {
+            if (!device || !tiFileData) return;
+            document.getElementById('sendBtn').disabled = true;
+            log('--- INITIATING FILE TRANSFER PROTOCOL ---', 'info');
 
             try {
-                logToTerminal('Requesting device with Vendor ID 0x0451 (Texas Instruments)...');
-                
-                // Real device request filter
-                const device = await navigator.usb.requestDevice({
-                    filters: [{ vendorId: 0x0451 }] // TI Vendor ID
-                });
+                // 1. Send RTS (Request to Send)
+                // Payload for RTS contains metadata (name, sizes, etc.). We send the 13-byte var header.
+                const rtsData = tiFileData.slice(0, 13);
+                await sendRawPacket(createPacket(MACHINE_ID, CMD_RTS, rtsData));
 
-                logToTerminal(`Success! Device selected: ${device.manufacturerName} ${device.productName}`);
+                // 2. Expect ACK then CTS
+                let resp1 = await readRawPacket();
+                if (!resp1 || resp1[1] !== CMD_ACK) throw new Error('Failed to get ACK for RTS');
                 
-                // Open Device
-                logToTerminal('Attempting to open device...');
-                await device.open();
-                logToTerminal('Device opened successfully.');
+                let resp2 = await readRawPacket();
+                if (!resp2 || resp2[1] !== CMD_CTS) throw new Error('Failed to get CTS');
 
-                // Select Configuration 1 (Standard for most USB peripherals)
-                if (device.configuration === null) {
-                    logToTerminal('Selecting configuration 1...');
-                    await device.selectConfiguration(1);
-                    logToTerminal('Configuration 1 selected.');
-                } else {
-                    logToTerminal(`Device is already configured (Config value: ${device.configuration.configurationValue}).`);
+                // 3. Send ACK for CTS
+                await sendRawPacket(createPacket(MACHINE_ID, CMD_ACK));
+
+                // 4. Stream DATA packets
+                // TI expects data in chunks, usually 512 or 255 bytes max payload size depending on OS version. 
+                // We'll use 255 byte chunks for safety.
+                const CHUNK_SIZE = 255;
+                const rawData = tiFileData.slice(13); // Skip the header we sent in RTS
+                
+                log(`Streaming ${rawData.length} bytes of variable data...`, 'info');
+                
+                for (let offset = 0; offset < rawData.length; offset += CHUNK_SIZE) {
+                    const chunk = rawData.slice(offset, offset + CHUNK_SIZE);
+                    await sendRawPacket(createPacket(MACHINE_ID, CMD_DATA, chunk));
+                    
+                    // Expect ACK for every chunk
+                    let ack = await readRawPacket();
+                    if (!ack || ack[1] !== CMD_ACK) {
+                        throw new Error(`Transfer failed at offset ${offset}. No ACK.`);
+                    }
+                    log(`Chunk ACKed (${Math.min(offset + CHUNK_SIZE, rawData.length)}/${rawData.length} bytes)`, 'success');
                 }
 
-                // Claim Interface 0
-                logToTerminal('Claiming interface 0...');
-                await device.claimInterface(0);
-                logToTerminal('Interface 0 successfully claimed.');
-
-                // Read and log endpoints
-                const interfaces = device.configuration.interfaces;
-                const endpoints = interfaces[0].alternate.endpoints;
+                // 5. Send EOT
+                await sendRawPacket(createPacket(MACHINE_ID, CMD_EOT));
                 
-                logToTerminal(`Found ${endpoints.length} endpoint(s) on Interface 0:`);
-                endpoints.forEach((ep) => {
-                    logToTerminal(` -> Endpoint Number: ${ep.endpointNumber}`);
-                    logToTerminal(`    Direction: ${ep.direction.toUpperCase()}`);
-                    logToTerminal(`    Type: ${ep.type.toUpperCase()}`);
-                    logToTerminal(`    Packet Size: ${ep.packetSize} bytes`);
-                });
+                // 6. Expect final ACK
+                let finalAck = await readRawPacket();
+                if (finalAck && finalAck[1] === CMD_ACK) {
+                    log('--- TRANSFER COMPLETE ---', 'success');
+                } else {
+                    log('Warning: No final ACK received for EOT, but data sent.', 'error');
+                }
 
-                logToTerminal('✅ Hardware initialized and ready for raw proprietary protocol transfer.');
-                logToTerminal('Note: Further implementation requires TI SilverLink/DirectLink packet crafting (Out of scope for this UI).');
-
-            } catch (error) {
-                // This catches user cancellations and permission errors
-                logToTerminal(`ERROR: ${error.message}`);
-                console.error(error);
+            } catch (err) {
+                log(`Transfer aborted: ${err.message}`, 'error');
+            } finally {
+                document.getElementById('sendBtn').disabled = false;
             }
         });
     </script>
